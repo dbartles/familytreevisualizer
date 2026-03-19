@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Tree Visualizer</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+
+<!-- ============ Welcome / File Upload Screen ============ -->
+<div id="welcome-screen">
+    <h1 class="welcome-title">Family Tree Visualizer</h1>
+    <p class="welcome-subtitle">Visualize 100+ generations from GEDCOM files</p>
+
+    <div id="drop-zone">
+        <span class="drop-icon">&#128194;</span>
+        <div class="drop-text">Drag & drop a GEDCOM file here</div>
+        <button id="file-btn" class="btn btn-primary">Choose File</button>
+        <div class="drop-hint">Supports GEDCOM 5.5.1 and 7.0 formats</div>
+    </div>
+
+    <input type="file" id="file-input" accept=".ged,.gedcom" style="display: none">
+    <div id="load-status"></div>
+</div>
+
+<!-- ============ Main Application ============ -->
+<div id="main-content">
+
+    <!-- Toolbar -->
+    <div id="toolbar">
+        <!-- View switch -->
+        <div class="toolbar-group">
+            <button id="btn-tree-view" class="btn active">Tree</button>
+            <button id="btn-fan-view" class="btn">Fan</button>
+            <button id="btn-sunburst-view" class="btn">Sunburst</button>
+            <!-- <button id="btn-globe-view" class="btn">Globe</button> --> <!-- Globe disabled for performance -->
+            <button id="btn-map-view" class="btn">Map</button>
+        </div>
+
+        <div class="toolbar-separator"></div>
+
+        <!-- Layout toggle (tree view only) -->
+        <div class="toolbar-group" id="layout-buttons">
+            <button id="btn-horizontal" class="btn btn-small active">Horizontal</button>
+            <button id="btn-vertical" class="btn btn-small">Vertical</button>
+        </div>
+
+        <div class="toolbar-separator"></div>
+
+        <!-- Actions -->
+        <div class="toolbar-group">
+            <button id="btn-fit" class="btn btn-small">Fit</button>
+            <button id="btn-change-root" class="btn btn-small">Root Person</button>
+            <button id="btn-export" class="btn btn-small">Export</button>
+            <button id="btn-save-geocache" class="btn btn-small" style="display:none" title="Download geocache.json to place in data/ folder — saves geocoding results so visitors don't have to re-geocode">Save Geocache</button>
+        </div>
+
+        <div class="toolbar-separator"></div>
+
+        <!-- Search -->
+        <div id="search-container">
+            <input type="text" id="search-input" placeholder="Search people...">
+            <div id="search-results"></div>
+        </div>
+
+        <!-- Stats -->
+        <div class="toolbar-stats">
+            <span id="stats-persons">0</span> people &middot;
+            <span id="stats-families">0</span> families &middot;
+            <span id="stats-generations">0</span> generations
+        </div>
+    </div>
+
+    <!-- Canvas Area -->
+    <div id="canvas-area">
+        <div id="tree-container">
+            <canvas id="tree-canvas"></canvas>
+        </div>
+        <div id="fan-container">
+            <canvas id="fan-canvas"></canvas>
+        </div>
+        <div id="sunburst-container"></div>
+        <div id="globe-container"></div>
+        <div id="map-container"></div>
+
+        <!-- Map Controls -->
+        <div id="map-controls">
+            <label><input type="checkbox" id="map-toggle-life-lines" checked> Life paths</label>
+            <label><input type="checkbox" id="map-toggle-unknown-locations" checked> Unknown locations (0,0)</label>
+        </div>
+
+        <!-- Map Time Slider -->
+        <div id="map-time-slider" class="inactive">
+            <div id="time-slider-header">
+                <span id="time-slider-label">Time Filter (off)</span>
+                <span id="time-slider-controls">
+                    <button id="btn-time-toggle" title="Enable/disable time filter">Enable</button>
+                    <button id="btn-time-play" title="Play through time periods" disabled>Play</button>
+                </span>
+            </div>
+            <input type="range" id="time-slider" min="0" max="100" value="0" step="1" disabled>
+            <div id="time-slider-ticks"></div>
+        </div>
+
+        <!-- Globe Controls -->
+        <div id="globe-controls">
+            <label><input type="checkbox" id="toggle-life-lines" checked> Life paths</label>
+            <label><input type="checkbox" id="toggle-ancestor-lines" checked> Ancestor lines</label>
+            <label><input type="checkbox" id="toggle-unknown-locations" checked> Unknown locations (0,0)</label>
+        </div>
+
+        <!-- Geocoding Progress -->
+        <div id="geocoding-progress">
+            <div class="geocoding-progress-text">Geocoding places...</div>
+            <div class="geocoding-progress-bar">
+                <div class="geocoding-progress-fill" id="geocoding-fill"></div>
+            </div>
+            <div class="geocoding-progress-count" id="geocoding-count">0 / 0</div>
+        </div>
+
+        <!-- Sunburst Tooltip -->
+        <div id="sunburst-tooltip"></div>
+
+        <!-- Sunburst Breadcrumb -->
+        <div id="sunburst-breadcrumb"></div>
+
+        <!-- Zoom & Pan Controls -->
+        <div id="zoom-controls">
+            <button id="btn-zoom-in" class="btn btn-small zoom-btn" title="Zoom In">+</button>
+            <button id="btn-zoom-out" class="btn btn-small zoom-btn" title="Zoom Out">&minus;</button>
+            <button id="btn-zoom-fit" class="btn btn-small zoom-btn" title="Fit / Reset">&#8862;</button>
+            <div class="pan-controls">
+                <button id="btn-pan-up" class="btn btn-small zoom-btn pan-btn" title="Pan Up">&uarr;</button>
+                <div class="pan-row">
+                    <button id="btn-pan-left" class="btn btn-small zoom-btn pan-btn" title="Pan Left">&larr;</button>
+                    <button id="btn-pan-right" class="btn btn-small zoom-btn pan-btn" title="Pan Right">&rarr;</button>
+                </div>
+                <button id="btn-pan-down" class="btn btn-small zoom-btn pan-btn" title="Pan Down">&darr;</button>
+            </div>
+        </div>
+
+        <!-- Detail Panel (slides in from right) -->
+        <div id="detail-panel">
+            <div class="detail-header">
+                <h2 id="detail-name">Person</h2>
+                <button id="detail-close">&times;</button>
+            </div>
+
+            <div class="detail-row">
+                <div class="detail-label">Sex</div>
+                <div class="detail-value" id="detail-sex">-</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Birth Date</div>
+                <div class="detail-value" id="detail-birth-date">-</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Birth Place</div>
+                <div class="detail-value" id="detail-birth-place">-</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Death Date</div>
+                <div class="detail-value" id="detail-death-date">-</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Death Place</div>
+                <div class="detail-value" id="detail-death-place">-</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Generation</div>
+                <div class="detail-value" id="detail-generation">-</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Country</div>
+                <div class="detail-value" id="detail-country">-</div>
+            </div>
+
+            <div id="detail-location-edit" style="display:none">
+                <div class="detail-row" style="border-top:1px solid #dee2e6; padding-top:12px; margin-top:12px;">
+                    <div class="detail-label" style="font-weight:600; color:#495057;">EDIT LOCATION</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Place</div>
+                    <select id="edit-place-type" class="edit-location-input">
+                        <option value="birth">Birth Place</option>
+                        <option value="death">Death Place</option>
+                    </select>
+                </div>
+                <div id="edit-place-name" style="font-size:0.82rem; color:#6c757d; margin-bottom:8px; font-style:italic;"></div>
+                <div class="detail-row">
+                    <div class="detail-label">Latitude</div>
+                    <input type="number" id="edit-lat" step="any" min="-90" max="90" class="edit-location-input" placeholder="e.g. 48.8566">
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Longitude</div>
+                    <input type="number" id="edit-lng" step="any" min="-180" max="180" class="edit-location-input" placeholder="e.g. 2.3522">
+                </div>
+                <div style="display:flex; gap:6px; margin-top:8px;">
+                    <button id="btn-save-location" class="btn btn-primary btn-small">Save Location</button>
+                </div>
+                <div id="edit-location-status" style="font-size:0.8rem; margin-top:6px;"></div>
+            </div>
+
+            <div id="detail-family"></div>
+        </div>
+
+        <!-- Country Legend -->
+        <div id="legend-container">
+            <h4>Countries</h4>
+            <div id="country-legend"></div>
+        </div>
+
+        <!-- Root Person Selector -->
+        <div id="root-person-select">
+            <div id="root-person-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ============ Export Dialog ============ -->
+<div id="export-dialog">
+    <div class="export-content">
+        <h3>Export Family Tree</h3>
+
+        <div class="export-field">
+            <label>Format</label>
+            <select id="export-format">
+                <option value="png">PNG Image</option>
+                <option value="pdf">PDF Document</option>
+            </select>
+        </div>
+
+        <div class="export-field">
+            <label>Width (inches)</label>
+            <input type="number" id="export-width" value="36" min="1" max="100">
+        </div>
+
+        <div class="export-field">
+            <label>DPI</label>
+            <select id="export-dpi">
+                <option value="150">150 DPI</option>
+                <option value="300">300 DPI</option>
+            </select>
+        </div>
+
+        <div id="export-progress"></div>
+
+        <div class="export-actions">
+            <button id="export-cancel" class="btn">Cancel</button>
+            <button id="export-execute" class="btn btn-primary">Export</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ Scripts ============ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<!-- <script src="//unpkg.com/globe.gl"></script> --> <!-- Globe disabled for performance -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/gedcom-parser.js"></script>
+<script src="js/geocoder.js"></script>
+<script src="js/tree-view.js"></script>
+<script src="js/fan-view.js"></script>
+<script src="js/sunburst-view.js"></script>
+<script src="js/globe-view.js"></script>
+<script src="js/map-view.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
